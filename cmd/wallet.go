@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/hashicorp/go-secure-stdlib/password"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spacemeshos/go-spacemesh/common/types"
+	"github.com/spacemeshos/go-spacemesh/signing"
 	"github.com/spf13/cobra"
 
 	"github.com/spacemeshos/smcli/common"
@@ -289,9 +291,137 @@ only child keys).`,
 	},
 }
 
+var createMultiSigCmd = &cobra.Command{
+	Use:   "createMultiSig [threshold] [public keys]",
+	Short: "Generate a new multi-sig wallet address",
+	Long: `Create a new multi-sig wallet address using a threshold and a list of participant public keys.
+The public keys should be provided as a comma-separated list.`,
+	Args: cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		// parse the threshold
+		threshold, err := strconv.ParseUint(args[0], 10, 8)
+		if err != nil {
+			fmt.Println("Invalid threshold:", err)
+			return
+		}
+
+		// parse the public keys
+		publicKeysStr := strings.Split(args[1], ",")
+		publicKeys := make([]types.Hash32, len(publicKeysStr))
+		for i, publicKeyStr := range publicKeysStr {
+			publicKey := types.BytesToHash([]byte(publicKeyStr))
+			publicKeys[i] = publicKey
+		}
+
+		// generate the multi-sig wallet address
+		threshold8 := uint8(threshold)
+		address, err := wallet.SpawnMultiSig(threshold8, publicKeys)
+		if err != nil {
+			fmt.Println("Failed to generate multi-sig wallet address:", err)
+			return
+		}
+
+		// output the wallet address
+		fmt.Println("Multi-sig wallet address:", address)
+	},
+}
+
+var generateTransactionCmd = &cobra.Command{
+	Use:   "generateTransaction [wallet file] [recipient address] [amount]",
+	Short: "Generate transaction data to spend money to a recipient",
+	Long:  `Generate transaction data using a wallet, recipient address and amount. The transaction data can be used to sign a transaction.`,
+	Args:  cobra.ExactArgs(3),
+	Run: func(cmd *cobra.Command, args []string) {
+		walletFn := args[0]
+
+		// make sure the file exists
+		f, err := os.Open(walletFn)
+		cobra.CheckErr(err)
+		defer f.Close()
+
+		// get the password
+		fmt.Print("Enter wallet password: ")
+		password, err := password.Read(os.Stdin)
+		fmt.Println()
+		cobra.CheckErr(err)
+
+		// attempt to read it
+		wk := wallet.NewKey(wallet.WithPasswordOnly([]byte(password)))
+		w, err := wk.Open(f, debug)
+		cobra.CheckErr(err)
+		fmt.Print(w.Meta)
+		// // parse the recipient address
+		// recipientAddress := args[1]
+
+		// // parse the amount
+		// amount, err := strconv.ParseUint(args[2], 10, 64)
+		// if err != nil {
+		// 	fmt.Println("Invalid amount:", err)
+		// 	return
+		// }
+
+		// // generate the transaction data
+
+		// if err != nil {
+		// 	fmt.Println("Failed to generate transaction data:", err)
+		// 	return
+		// }
+
+		// // output the transaction data
+		// fmt.Println("Transaction data:", transactionData)
+	},
+}
+
+var signTransactionCmd = &cobra.Command{
+	Use:   "signTransaction [wallet file] [transaction data]",
+	Short: "Sign a transaction using a wallet",
+	Long:  `Sign a transaction using a wallet. The transaction data should be provided as a string.`,
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		walletFn := args[0]
+
+		// make sure the file exists
+		f, err := os.Open(walletFn)
+		cobra.CheckErr(err)
+		defer f.Close()
+
+		// get the password
+		fmt.Print("Enter wallet password: ")
+		password, err := password.Read(os.Stdin)
+		fmt.Println()
+		cobra.CheckErr(err)
+
+		// attempt to read it
+		wk := wallet.NewKey(wallet.WithPasswordOnly([]byte(password)))
+		w, err := wk.Open(f, debug)
+		cobra.CheckErr(err)
+
+		// print the master account
+		master := w.Secrets.MasterKeypair
+
+		// parse the transaction data
+		transactionData := []byte(args[1])
+		// convert master.private into an ed25519.PrivateKey
+		privateKey := ed25519.PrivateKey(master.Private)
+		opt := signing.WithPrivateKey(privateKey)
+		sig, err := signing.NewEdSigner(opt)
+
+		// sign the transaction
+		signature := sig.Sign(4, transactionData)
+		if err != nil {
+			fmt.Println("Failed to sign transaction:", err)
+			return
+		}
+
+		// output the signature
+		fmt.Println("Transaction signature:", signature)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(walletCmd)
 	walletCmd.AddCommand(createCmd)
+	walletCmd.AddCommand(createMultiSigCmd)
 	walletCmd.AddCommand(readCmd)
 	readCmd.Flags().BoolVarP(&printPrivate, "private", "p", false, "Print private keys")
 	readCmd.Flags().BoolVarP(&printFull, "full", "f", false, "Print full keys (no abbreviation)")

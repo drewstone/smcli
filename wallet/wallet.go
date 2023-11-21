@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	pb "github.com/spacemeshos/api/release/go/spacemesh/v1"
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/genvm/core"
+	multisig "github.com/spacemeshos/go-spacemesh/genvm/templates/multisig"
 	walletTemplate "github.com/spacemeshos/go-spacemesh/genvm/templates/wallet"
 	"github.com/tyler-smith/go-bip39"
 
@@ -181,4 +183,29 @@ func PubkeyToAddress(pubkey []byte, hrp string) string {
 	walletArgs := &walletTemplate.SpawnArguments{PublicKey: key}
 	walletAddress := core.ComputePrincipal(walletTemplate.TemplateAddress, walletArgs)
 	return walletAddress.String()
+}
+
+// spawnMultiSig spawns a multisig contract with the given parameters.
+func SpawnMultiSig(threshold uint8, participants []core.PublicKey) (core.Address, error) {
+	numParticipants := len(participants)
+	if threshold < 1 || threshold > uint8(numParticipants) {
+		return core.Address{}, fmt.Errorf("invalid threshold")
+	}
+
+	if numParticipants <= 1 {
+		return core.Address{}, fmt.Errorf("invalid number of participants")
+	}
+
+	multisigArgs := &multisig.SpawnArguments{
+		Required:   threshold,
+		PublicKeys: participants,
+	}
+
+	multisigAddress := core.ComputePrincipal(multisig.TemplateAddress, multisigArgs)
+	return multisigAddress, nil
+}
+
+func GenerateTxnData() ([]byte, error) {
+	pb.Transaction
+	return nil, nil
 }
